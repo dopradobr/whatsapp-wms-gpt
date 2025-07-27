@@ -8,42 +8,58 @@ app = FastAPI()
 
 @app.get("/")
 async def root():
-    return {"message": "API do atendimento GPT + Oracle WMS via WhatsApp"}
+    return {"message": "API de atendimento WhatsApp + GPT + Oracle WMS Cloud"}
 
 @app.post("/webhook")
 async def receber_mensagem(request: Request):
     """
-    Endpoint que recebe mensagens da Z-API via webhook.
-    A Z-API envia um JSON com a mensagem e telefone do remetente.
+    Endpoint que recebe mensagens do WhatsApp (via Z-API webhook).
+    A mensagem é interpretada pelo GPT, que decide se deve consultar o WMS ou responder direto.
     """
-    payload = await request.json()
 
-    # 🟡 Extração segura do conteúdo da mensagem
-    mensagem = payload.get("message", {}).get("text", "")
-    telefone = payload.get("message", {}).get("phone", "")
+    try:
+        payload = await request.json()
 
-    if not mensagem or not telefone:
-        return {"status": "ignorado"}
+        # 🔹 Extração da mensagem e número
+        mensagem = payload.get("message", {}).get("text", "")
+        telefone = payload.get("message", {}).get("phone", "")
 
-    # 🧠 1. O GPT interpreta o que o usuário quer
-    intencao = await interpretar_intencao(mensagem)
+        print("[📩 RECEBIDO] Mensagem:", mensagem)
+        print("[📞 TELEFONE]", telefone)
 
-    # ⚙️ 2. Se o GPT identificou que é uma consulta ao WMS
-    if intencao.get("acao") == "consultar_wms":
-        item_code = intencao.get("item", "")
-        if not item_code:
-            resposta = "Não consegui identificar o código do item. Pode mandar novamente?"
+        if not mensagem or not telefone:
+            print("[⚠️ ERRO] Mensagem ou telefone ausente no payload.")
+            return {"status": "ignorado"}
+
+        # 🧠 1. GPT interpreta a intenção
+        intencao = await interpretar_intencao(mensagem)
+        print("[🔎 INTENÇÃO DETECTADA]", intencao)
+
+        # ⚙️ 2. Se for uma consulta ao WMS
+        if intencao.get("acao") == "consultar_wms":
+            item_code = intencao.get("item", "")
+
+            if not item_code:
+                resposta = "Não consegui identificar o item. Pode enviar o código novamente?"
+            else:
+                # 📦 3. Consultar o Oracle WMS Cloud
+                dados = await consultar_saldo(item_code)
+                print("[📦 DADOS DO WMS]", dados)
+
+                # 🤖 4. GPT gera uma resposta consultiva com base nos dados
+                resposta = await gerar_resposta_consultiva(item_code, dados)
+                print("[🤖 RESPOSTA GERADA]", resposta)
         else:
-            # 🔍 3. Consulta real ao Oracle WMS Cloud
-            dados = await consultar_saldo(item_code)
+            # 💬 5. Resposta direta do GPT
+            resposta = intencao.get("resposta", "Desculpe, não entendi. Pode reformular?")
+            print("[💬 RESPOSTA DIRETA]", resposta)
 
-            # 🤖 4. GPT gera a resposta consultiva com base nos dados do WMS
-            resposta = await gerar_resposta_consultiva(item_code, dados)
-    else:
-        # 💬 5. Caso o GPT diga que não precisa consultar o WMS, responde diretamente
-        resposta = intencao.get("resposta", "Desculpe, não entendi. Pode repetir?")
+        # 📤 6. Enviar a resposta pelo WhatsApp via Z-API
+        await enviar_whatsapp(telefone, resposta)
+        print("[✅ ENVIADO PARA WHATSAPP]", telefone)
 
-    # 📲 6. Envia a resposta final pelo WhatsApp usando a Z-API
-    await enviar_whatsapp(telefone, resposta)
+        return {"status": "ok"}
 
-    return {"status": "ok"}
+    except Exception as e:
+        print("[❌ ERRO GERAL NO WEBHOOK]", str(e))
+        return {"status": "erro", "mensagem": str(e)}
