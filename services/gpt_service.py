@@ -1,43 +1,59 @@
-"""
-Serviço GPT: interpreta perguntas do usuário e gera respostas consultivas.
-"""
-
 import os
 import openai
+import json
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def interpret_question(user_message):
+async def interpretar_intencao(mensagem):
     """
-    Usa GPT para entender a intenção do usuário e extrair parâmetros de consulta.
+    Usa o ChatGPT para entender a intenção do usuário.
+    Retorna um dicionário como:
+    {
+        "acao": "consultar_wms",
+        "item": "TESTRM"
+    }
+    ou
+    {
+        "acao": "responder",
+        "resposta": "Mensagem consultiva"
+    }
     """
-    prompt = f"""
-    Analise a pergunta abaixo e identifique:
-    - Se o usuário quer consultar saldo, LPNs ou itens no recebimento
-    - O item, se informado
-    Pergunta: "{user_message}"
-    """
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-    return response.choices[0].message["content"].strip()
 
-def generate_consultative_response(original_question, wms_data):
-    """
-    Usa GPT para transformar os dados do WMS em uma resposta consultiva e clara.
-    """
     prompt = f"""
-    O usuário fez a pergunta: "{original_question}".
-    Os dados retornados do WMS foram:
-    {wms_data}
+    Você é um consultor especializado em Oracle WMS Cloud.
+    Sua função é interpretar mensagens recebidas no WhatsApp e:
 
-    Crie uma resposta consultiva, clara e organizada para o usuário.
+    - Se a mensagem pedir saldo ou status de um item → responder APENAS com: 
+      {{"acao": "consultar_wms", "item": "<ITEM>"}}
+    
+    - Caso contrário → responder APENAS com:
+      {{"acao": "responder", "resposta": "Sou especialista em Oracle WMS Cloud — posso ajudar com dúvidas sobre inventário, recebimento, expedição, integrações e boas práticas. Qual é o seu desafio no momento?"}}
+
+    Mensagem recebida: "{mensagem}"
     """
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
-    )
-    return response.choices[0].message["content"].strip()
+
+    try:
+        resposta = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Você é um especialista em Oracle WMS Cloud."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0
+        )
+
+        conteudo = resposta.choices[0].message["content"].strip()
+
+        try:
+            return json.loads(conteudo)
+        except:
+            return {
+                "acao": "responder",
+                "resposta": "Sou especialista em Oracle WMS Cloud — posso ajudar com dúvidas sobre inventário, recebimento, expedição, integrações e boas práticas. Qual é o seu desafio no momento?"
+            }
+
+    except Exception as e:
+        return {
+            "acao": "responder",
+            "resposta": f"Não consegui processar sua solicitação no momento. Erro: {str(e)}"
+        }
