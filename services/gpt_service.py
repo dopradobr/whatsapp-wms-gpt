@@ -1,59 +1,32 @@
-import os
 import openai
-import json
+import os
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-async def interpretar_intencao(mensagem):
+def gerar_resposta_gpt(mensagem_usuario):
     """
-    Usa o ChatGPT para entender a intenção do usuário.
-    Retorna um dicionário como:
-    {
-        "acao": "consultar_wms",
-        "item": "TESTRM"
-    }
-    ou
-    {
-        "acao": "responder",
-        "resposta": "Mensagem consultiva"
-    }
-    """
-
-    prompt = f"""
-    Você é um consultor especializado em Oracle WMS Cloud.
-    Sua função é interpretar mensagens recebidas no WhatsApp e:
-
-    - Se a mensagem pedir saldo ou status de um item → responder APENAS com: 
-      {{"acao": "consultar_wms", "item": "<ITEM>"}}
-    
-    - Caso contrário → responder APENAS com:
-      {{"acao": "responder", "resposta": "Sou especialista em Oracle WMS Cloud — posso ajudar com dúvidas sobre inventário, recebimento, expedição, integrações e boas práticas. Qual é o seu desafio no momento?"}}
-
-    Mensagem recebida: "{mensagem}"
+    Gera uma resposta consultiva usando GPT para complementar o atendimento.
     """
 
     try:
+        prompt = f"""
+        Você é um consultor especialista em Oracle WMS Cloud.
+        O usuário enviou: "{mensagem_usuario}".
+        Responda de forma amigável, curta e consultiva, convidando a explicar o desafio dele.
+        """
+
         resposta = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Você é um especialista em Oracle WMS Cloud."},
+                {"role": "system", "content": "Você é um especialista em Oracle WMS Cloud, consultivo e prestativo."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.0
+            max_tokens=150,
+            temperature=0.7
         )
 
-        conteudo = resposta.choices[0].message["content"].strip()
-
-        try:
-            return json.loads(conteudo)
-        except:
-            return {
-                "acao": "responder",
-                "resposta": "Sou especialista em Oracle WMS Cloud — posso ajudar com dúvidas sobre inventário, recebimento, expedição, integrações e boas práticas. Qual é o seu desafio no momento?"
-            }
+        return resposta.choices[0].message["content"].strip()
 
     except Exception as e:
-        return {
-            "acao": "responder",
-            "resposta": f"Não consegui processar sua solicitação no momento. Erro: {str(e)}"
-        }
+        print(f"Erro ao gerar resposta GPT: {e}")
+        return "Sou especialista em Oracle WMS Cloud — posso ajudar com dúvidas sobre inventário, recebimento, expedição, integrações e boas práticas. Qual é o seu desafio no momento?"
